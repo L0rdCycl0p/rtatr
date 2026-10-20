@@ -8,4 +8,5 @@ pub mod task;
 
 pub use error::{Result, RtatrError};
 pub use huid::Huid;
-pub use task::Task;
+pub use query::{CmpOp, IntExpr, Query};
+pub use task::{split_tags, Prop, Task};

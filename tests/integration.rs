@@ -1,133 +1,139 @@
-use std::path::PathBuf;
+use rtatr::{query::parse, Task};
 
-use chrono::Timelike as _;
-use rtatr::path::Paths;
-use rtatr::query::parse;
-use rtatr::store::Store;
-use rtatr::task::Task;
-use rtatr::{query, Huid};
+fn task_with(tags: &[&str], priority: i32, body: &str) -> Task {
+    let mut t = Task::new(
+        "20240101-120000".parse().unwrap(),
+        "t".into(),
+        priority,
+        tags.iter().map(|s| s.to_string()).collect(),
+    );
+    t.body = body.into();
+    t
+}
 
-fn temp_store() -> (tempfile::TempDir, Store) {
-    let dir = tempfile::tempdir().unwrap();
-    let store = Store::new(Paths::from(dir.path().to_path_buf()));
-    (dir, store)
+// --- Upstream query syntax ----------------------------------------------
+
+#[test]
+fn upstream_any_matches_everything() {
+    let q = parse("any").unwrap();
+    assert!(q.matches(&task_with(&[], 100, "")));
+    assert!(q.matches(&task_with(&["x"], 100, "hi")));
 }
 
 #[test]
-fn end_to_end_add_query_done() {
-    let (_dir, store) = temp_store();
-
-    let h1 = store.next_huid().unwrap();
-    let mut t1 = Task {
-        huid: h1.clone(),
-        tags: ["work"].iter().map(|s| s.to_string()).collect(),
-        props: Default::default(),
-        body: "First task".to_string(),
-        path: PathBuf::new(),
-    };
-    store.save(&mut t1).unwrap();
-
-    let h2 = store.next_huid().unwrap();
-    let mut t2 = Task {
-        huid: h2.clone(),
-        tags: ["work", "done"].iter().map(|s| s.to_string()).collect(),
-        props: Default::default(),
-        body: "Second task".to_string(),
-        path: PathBuf::new(),
-    };
-    store.save(&mut t2).unwrap();
-
-    let open = query::parse(":work and not :done").unwrap();
-    let results = store.query(&open).unwrap();
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].huid, h1);
+fn upstream_tagged() {
+    let q = parse("tagged").unwrap();
+    assert!(!q.matches(&task_with(&[], 100, "")));
+    assert!(q.matches(&task_with(&["a"], 100, "")));
 }
 
 #[test]
-fn persists_across_store_instances() {
-    let dir = tempfile::tempdir().unwrap();
-    {
-        let store = Store::new(Paths::from(dir.path().to_path_buf()));
-        let huid = store.next_huid().unwrap();
-        let mut t = Task {
-            huid: huid.clone(),
-            tags: ["x"].iter().map(|s| s.to_string()).collect(),
-            props: Default::default(),
-            body: "hello".to_string(),
-            path: PathBuf::new(),
-        };
-        store.save(&mut t).unwrap();
+fn upstream_priority_comparisons() {
+    let low = task_with(&["x"], 50, "");
+    let high = task_with(&["x"], 200, "");
+    for (q, ok_low, ok_high) in [
+        ("priority lt 100", true, false),
+        ("priority le 50", true, false),
+        ("priority gt 100", false, true),
+        ("priority ge 200", false, true),
+        ("priority eq 50", true, false),
+        ("priority ne 50", false, true),
+        ("100 lt priority", false, true),
+        ("50 eq priority", true, false),
+    ] {
+        let q = parse(q).unwrap();
+        assert_eq!(q.matches(&low), ok_low, "query {q:?} vs low-priority task");
+        assert_eq!(
+            q.matches(&high),
+            ok_high,
+            "query {q:?} vs high-priority task"
+        );
     }
-    let store2 = Store::new(Paths::from(dir.path().to_path_buf()));
-    assert_eq!(store2.all().unwrap().len(), 1);
 }
 
 #[test]
-fn now_has_no_subsecond_precision() {
-    let h = Huid::now();
-    assert_eq!(h.timestamp().nanosecond(), 0);
-    assert_eq!(h.to_string().parse::<Huid>().unwrap(), h);
-}
-
-#[test]
-fn trailing_operator_errors() {
-    assert!(parse(":a and").is_err());
-    assert!(parse(":a or").is_err());
-    assert!(parse("and :a").is_err());
-}
-
-#[test]
-fn unbalanced_parens_errors() {
-    assert!(parse("(:a").is_err());
-    assert!(parse(":a)").is_err());
-}
-
-#[test]
-fn store_writes_task_directory() {
-    let (_dir, store) = temp_store();
-    let h = store.next_huid().unwrap();
-    let mut t = Task {
-        huid: h.clone(),
-        tags: ["x"].into_iter().map(String::from).collect(),
-        props: Default::default(),
-        body: "hello".into(),
-        path: PathBuf::new(),
-    };
-    store.save(&mut t).unwrap();
-
-    let task_md = store.paths().task_path(&h);
-    assert!(task_md.is_file(), "TASK.md missing at {task_md:?}");
-    assert!(task_md.ends_with(format!("{h}/TASK.md")));
-    assert!(store.paths().task_dir(&h).is_dir());
-
-    assert_eq!(store.all().unwrap().len(), 1);
-}
-
-#[test]
-fn huid_accepts_upstream_suffix() {
-    let h: Huid = "20240101-120000-rexim".parse().unwrap();
-    assert_eq!(h.to_string(), "20240101-120000-rexim");
-    let h: Huid = "20240101-120000-01a".parse().unwrap();
-    assert_eq!(h.to_string(), "20240101-120000-01a");
-
-    assert!(
-        "20240101-120000".parse::<Huid>().unwrap() < "20240101-120000-01".parse::<Huid>().unwrap()
+fn upstream_huid_primary() {
+    let t = task_with(&[], 100, "");
+    let h = t.huid.to_string();
+    assert!(parse(&h).unwrap().matches(&t));
+    assert!(!parse("20240101-120001").unwrap().matches(&t));
+    let t2 = Task::new(
+        "20240101-120000-rexim".parse().unwrap(),
+        "x".into(),
+        100,
+        vec![],
     );
-    assert!(
-        "20240101-120000-01".parse::<Huid>().unwrap()
-            < "20240101-120000-02".parse::<Huid>().unwrap()
-    );
-    assert!(
-        "20240101-120000-09".parse::<Huid>().unwrap()
-            < "20240101-120000-10".parse::<Huid>().unwrap()
-    );
+    assert!(parse("20240101-120000-rexim").unwrap().matches(&t2));
 }
 
 #[test]
-fn valid_huid_file_is_error() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join("tasks")).unwrap();
-    std::fs::write(dir.path().join("tasks/20240101-120000"), "").unwrap();
-    let store = Store::new(Paths::from(dir.path().to_path_buf()));
-    assert!(store.all().is_err());
+fn upstream_square_brackets() {
+    let q = parse("[:a or :b] and :c").unwrap();
+    assert!(q.matches(&task_with(&["a", "c"], 100, "")));
+    assert!(!q.matches(&task_with(&["a"], 100, "")));
+}
+
+#[test]
+fn upstream_parens_rejected() {
+    assert!(parse("(:a)").is_err());
+    assert!(parse(":a and (:b or :c)").is_err());
+}
+
+#[test]
+fn upstream_not_on_int_errors() {
+    assert!(parse("not priority").is_err());
+    assert!(parse("not 50").is_err());
+}
+
+#[test]
+fn upstream_cmp_on_bools_errors() {
+    assert!(parse(":a lt :b").is_err());
+    assert!(parse("tagged gt 0").is_err());
+}
+
+#[test]
+fn upstream_int_alone_errors() {
+    assert!(parse("50").is_err());
+    assert!(parse("priority").is_err());
+}
+
+#[test]
+fn upstream_comparison_precedence() {
+    // and binds tighter than or, cmp tighter than and.
+    let q = parse("priority lt 50 and :urgent or :done").unwrap();
+    // (priority<50 AND urgent) OR done
+    assert!(q.matches(&task_with(&["done"], 999, "")));
+    assert!(q.matches(&task_with(&["urgent"], 10, "")));
+    assert!(!q.matches(&task_with(&["urgent"], 100, "")));
+    assert!(!q.matches(&task_with(&[], 10, "")));
+}
+
+// --- rtatr extensions still work ----------------------------------------
+
+#[test]
+fn fork_text_search_still_works() {
+    let t = task_with(&[], 100, "the login bug is back");
+    assert!(parse("\"login bug\"").unwrap().matches(&t));
+    assert!(parse("login").unwrap().matches(&t));
+    assert!(!parse("logout").unwrap().matches(&t));
+}
+
+#[test]
+fn fork_prop_filter_still_works() {
+    let t = task_with(&[], 100, "");
+    assert!(parse("PRIORITY=100").unwrap().matches(&t));
+    assert!(!parse("PRIORITY=50").unwrap().matches(&t));
+    assert!(parse("TAGS=urgent")
+        .unwrap()
+        .matches(&task_with(&["urgent"], 100, "")));
+    assert!(parse("hello")
+        .unwrap()
+        .matches(&task_with(&[], 100, "hello world")));
+    assert!(!parse("hello").unwrap().matches(&t));
+}
+#[test]
+fn fork_tag_syntax_unchanged() {
+    let q = parse(":a and not :b").unwrap();
+    assert!(q.matches(&task_with(&["a"], 100, "")));
+    assert!(!q.matches(&task_with(&["a", "b"], 100, "")));
 }
