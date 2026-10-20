@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::engine::ArgValueCompleter;
@@ -17,8 +17,10 @@ use rtatr::task::{Task, NEW_TASK_PRIORITY};
 #[command(name = "rtatr", version, about = "Rust Task Tracker")]
 #[command(disable_help_subcommand = true)]
 struct Cli {
-    #[arg(long, env = "RTATR_ROOT", default_value = ".", value_hint = clap::ValueHint::DirPath)]
-    root: PathBuf,
+    /// Project root containing `tasks/`. Falls back to `RTATR_ROOT`,
+    /// then upward search from CWD, then `.`.
+    #[arg(long, env = "RTATR_ROOT", value_hint = clap::ValueHint::DirPath)]
+    root: Option<PathBuf>,
 
     #[command(subcommand)]
     command: Command,
@@ -167,10 +169,38 @@ fn main() {
         std::process::exit(1);
     }
 }
+fn preprocess_args() -> Vec<String> {
+    const LONG_FLAGS: &[&str] = &["help", "debug", "update", "path-only", "id"];
 
+    let mut out = Vec::new();
+    let mut after_dash_dash = false;
+    for arg in std::env::args() {
+        if after_dash_dash {
+            out.push(arg);
+            continue;
+        }
+        if arg == "--" {
+            after_dash_dash = true;
+            out.push(arg);
+            continue;
+        }
+        if let Some(stripped) = arg.strip_prefix('-') {
+            if !arg.starts_with("--") && LONG_FLAGS.contains(&stripped) {
+                out.push(format!("--{stripped}"));
+                continue;
+            }
+        }
+        out.push(arg);
+    }
+    out
+}
 fn run() -> Result<()> {
-    let cli = Cli::parse();
-    let store = Store::new(Paths::from(cli.root));
+    let cli = Cli::parse_from(preprocess_args());
+    let paths = match cli.root {
+        Some(r) => Paths::from(r),
+        None => Paths::discover().unwrap_or_else(|| Paths::from(PathBuf::from("."))),
+    };
+    let store = Store::new(paths);
 
     match cli.command {
         Command::Init => {
@@ -205,12 +235,23 @@ fn run() -> Result<()> {
                     println!("    {tok}");
                 }
                 println!();
-                println!("QUERY AST:");
-                println!("    {parsed_q:?}");
+                println!("QUERY OPS:");
+                query::print_qop(&parsed_q, "    ");
                 if !parsed_u.is_empty() {
                     println!();
+                    println!("UPDATE TOKENS:");
+                    for tok in update_src
+                        .split(|c: char| c.is_whitespace() || c == ',')
+                        .filter(|s| !s.is_empty())
+                    {
+                        println!("    {tok}");
+                    }
+                    println!();
                     println!("UPDATE OPS:");
-                    println!("    {parsed_u:?}");
+                    for op in &parsed_u {
+                        print!("    ");
+                        rtatr::update::print_uop(op);
+                    }
                 }
                 return Ok(());
             }
@@ -248,7 +289,8 @@ fn run() -> Result<()> {
                     store.save(task)?;
                     updated += 1;
                 }
-                print_task_report(task);
+                let marker = was_updated.then_some(update_src.as_str());
+                print_task_report(task, marker);
             }
             if updated > 0 {
                 println!("{updated} tasks were updated");
@@ -303,12 +345,12 @@ fn run() -> Result<()> {
             if path_only {
                 println!("{}", task.path.display());
             } else {
-                print_task_report(&task);
+                print_task_report(&task, None);
             }
         }
 
-        Command::Id => match store.paths().current_task_huid() {
-            Some(h) => print!("{h}"),
+        Command::Id => match store.paths().current_task_id() {
+            Some(id) => print!("{id}"),
             None => {
                 return Err(RtatrError::Parse(
                     "you are not inside any task folder".into(),
@@ -317,9 +359,12 @@ fn run() -> Result<()> {
         },
 
         Command::Ref { huid } => {
-            let h: Huid = match huid {
-                Some(s) => s.parse().map_err(RtatrError::InvalidHuid)?,
-                None => store.paths().current_task_huid().ok_or_else(|| {
+            let h: String = match huid {
+                Some(s) => s
+                    .parse::<Huid>()
+                    .map_err(RtatrError::InvalidHuid)?
+                    .to_string(),
+                None => store.paths().current_task_id().ok_or_else(|| {
                     RtatrError::Parse("not inside any task folder; pass the HUID of a task".into())
                 })?,
             };
@@ -327,14 +372,13 @@ fn run() -> Result<()> {
             let status = std::process::Command::new("grep")
                 .arg("--exclude-dir=.git")
                 .arg("-Irn")
-                .arg(h.to_string())
+                .arg(&h)
                 .arg(&root)
                 .status()
                 .map_err(|e| RtatrError::Io {
                     path: root.clone(),
                     source: e,
                 })?;
-            // grep exits 1 when no match; that's fine.
             if !status.success() && status.code() != Some(1) {
                 return Err(RtatrError::Parse(format!("grep failed: {status:?}")));
             }
@@ -507,15 +551,20 @@ fn run() -> Result<()> {
     Ok(())
 }
 
-fn print_task_report(task: &Task) {
+fn print_task_report(task: &Task, updated: Option<&str>) {
+    let marker = match updated {
+        Some(spec) => format!(" <UPDATED: {spec}>"),
+        None => String::new(),
+    };
     let tags = if task.tags.is_empty() {
         String::new()
     } else {
         format!(" [{}]", task.tags.join(","))
     };
     println!(
-        "{}:1: {} [PRIORITY: {:3}]{} {}",
+        "{}:1:{} {} [PRIORITY: {:3}]{} {}",
         task.path.display(),
+        marker,
         task.status,
         task.priority,
         tags,

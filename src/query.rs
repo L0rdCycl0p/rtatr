@@ -70,7 +70,51 @@ fn prop_matches(task: &Task, key: &str, expected: Option<&str>) -> bool {
         (None, _) => false,
     }
 }
+pub fn print_qop(q: &Query, indent: &str) {
+    match q {
+        Query::True => println!("{indent}QOP_ANY"),
+        Query::Tag(t) => println!("{indent}QOP_TAG {t}"),
+        Query::Tagged => println!("{indent}QOP_TAGGED"),
+        Query::HuidMatch(h) => println!("{indent}QOP_ID {h}"),
+        Query::Text(t) => println!("{indent}QOP_TEXT {t}"),
+        Query::Prop { key, value: Some(v) } => println!("{indent}QOP_PROP {key}={v}"),
+        Query::Prop { key, value: None } => println!("{indent}QOP_PROP {key}"),
+        Query::Not(inner) => {
+            print_qop(inner, indent);
+            println!("{indent}QOP_NOT");
+        }
+        Query::And(a, b) => {
+            print_qop(a, indent);
+            print_qop(b, indent);
+            println!("{indent}QOP_AND");
+        }
+        Query::Or(a, b) => {
+            print_qop(a, indent);
+            print_qop(b, indent);
+            println!("{indent}QOP_OR");
+        }
+        Query::Cmp(op, a, b) => {
+            print_intexpr(a, indent);
+            print_intexpr(b, indent);
+            let name = match op {
+                CmpOp::Lt => "QOP_LT",
+                CmpOp::Le => "QOP_LTE",
+                CmpOp::Gt => "QOP_GT",
+                CmpOp::Ge => "QOP_GTE",
+                CmpOp::Eq => "QOP_EQ",
+                CmpOp::Ne => "QOP_NEQ",
+            };
+            println!("{indent}{name}");
+        }
+    }
+}
 
+fn print_intexpr(e: &IntExpr, indent: &str) {
+    match e {
+        IntExpr::Priority => println!("{indent}QOP_PRIORITY"),
+        IntExpr::Lit(n) => println!("{indent}QOP_INTEGER {n}"),
+    }
+}
 impl Query {
     pub fn matches(&self, task: &Task) -> bool {
         match self {
@@ -171,6 +215,22 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 }
                 tokens.push(Token::Str(chars[start..i].iter().collect()));
                 i += 1;
+            }
+            '.' => {
+                // Deprecated `.tag` syntax
+                let start = i + 1;
+                i += 1;
+                while i < chars.len() && !chars[i].is_whitespace() && !is_bracket(chars[i]) {
+                    i += 1;
+                }
+                let tag: String = chars[start..i].iter().collect();
+                if tag.is_empty() {
+                    return Err("empty tag after '.'".into());
+                }
+                eprintln!(
+                    "WARNING: Using `.` to refer to tags is deprecated and will be removed in the future. Use `:` instead."
+                );
+                tokens.push(Token::Tag(tag));
             }
             _ if is_ident_char(c) => {
                 let start = i;

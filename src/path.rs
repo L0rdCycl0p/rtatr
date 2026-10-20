@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use crate::huid::Huid;
 
@@ -46,10 +46,62 @@ impl Paths {
         }
         Some(huid)
     }
+
+    pub fn discover() -> Option<Self> {
+        if let Ok(root) = std::env::var("RTATR_ROOT") {
+            let p = PathBuf::from(root);
+            if p.join("tasks").is_dir() {
+                return Some(Self { root: p });
+            }
+        }
+        let cwd = std::env::current_dir().ok()?;
+        let mut cur: Option<&Path> = Some(&cwd);
+        while let Some(dir) = cur {
+            if dir.join("tasks").is_dir() {
+                return Some(Self {
+                    root: dir.to_path_buf(),
+                });
+            }
+            cur = dir.parent();
+        }
+        None
+    }
+    pub fn current_task_id(&self) -> Option<String> {
+        let cwd = std::env::current_dir().ok()?;
+        let name = cwd.file_name()?.to_str()?.to_string();
+        let parent = cwd.parent()?;
+        if parent.file_name()? != "tasks" {
+            return None;
+        }
+        Some(name)
+    }
 }
 
 impl From<PathBuf> for Paths {
     fn from(root: PathBuf) -> Self {
         Self { root }
     }
+}
+
+pub fn relpath_from_canonical(base: &Path, target: &Path) -> PathBuf {
+    let target = target
+        .canonicalize()
+        .unwrap_or_else(|_| target.to_path_buf());
+    let base_parts: Vec<Component> = base.components().collect();
+    let targ_parts: Vec<Component> = target.components().collect();
+    let mut i = 0;
+    while i < base_parts.len() && i < targ_parts.len() && base_parts[i] == targ_parts[i] {
+        i += 1;
+    }
+    let mut result = PathBuf::new();
+    for _ in i..base_parts.len() {
+        result.push("..");
+    }
+    if result.as_os_str().is_empty() {
+        result.push(".");
+    }
+    for comp in &targ_parts[i..] {
+        result.push(comp.as_os_str());
+    }
+    result
 }

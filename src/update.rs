@@ -72,3 +72,12 @@ pub fn apply_update(task: &mut Task, ops: &[UOp]) -> bool {
     }
     changed
 }
+
+pub fn print_uop(op: &UOp) {
+    match op {
+        UOp::Open => println!("UOP_OPEN"),
+        UOp::Close => println!("UOP_CLOSE"),
+        UOp::Tag(t) => println!("UOP_TAG {t}"),
+        UOp::Untag(t) => println!("UOP_UNTAG {t}"),
+    }
+}

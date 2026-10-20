@@ -370,3 +370,52 @@ fn id_outside_task_dir_errors() {
         .unwrap();
     assert!(!out.status.success());
 }
+
+#[test]
+fn discovers_tasks_in_parent() {
+    let dir = tempfile::tempdir().unwrap();
+    // init + new über --root, damit das Setup unabhängig von der CWD ist
+    run_ok(rtatr(dir.path()).arg("init"));
+    run_ok(rtatr(dir.path()).args(["new", "Discovered"]));
+
+    let sub = dir.path().join("src");
+    std::fs::create_dir_all(&sub).unwrap();
+
+    // rtatr ohne --root, CWD unterhalb des Projekt-Roots
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_rtatr"))
+        .arg("ls")
+        .current_dir(&sub)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("Discovered"),
+        "stdout: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+}
+
+#[test]
+fn dash_help_is_accepted() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_rtatr"))
+        .arg("ls")
+        .arg("-help")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stdout).to_lowercase().contains("usage"));
+}
+
+#[test]
+fn ls_update_marks_updated_tasks() {
+    let dir = tempfile::tempdir().unwrap();
+    run_ok(rtatr(dir.path()).arg("init"));
+    run_ok(rtatr(dir.path()).args(["new", "-t", "bug", "x"]));
+    let out = run_ok(rtatr(dir.path()).args(["ls", "-update", "close", ":bug"]));
+    assert!(
+        out.contains("<UPDATED: close>"),
+        "out: {out}"
+    );
+}
