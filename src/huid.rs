@@ -1,49 +1,53 @@
-use std::fmt;
-use std::str::FromStr;
+use std::{fmt, str::FromStr};
 
 use chrono::{DateTime, NaiveDateTime, TimeZone, Timelike, Utc};
 
-/// Human-Unique ID: `YYYYMMDD-HHMMSS` with optional `-NN` collision suffix.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+/// Truncate a UTC timestamp to whole seconds (nanoseconds zeroed).
+///
+/// `Huid::now()` uses this so that IDs have stable, second-precision
+/// timestamps matching upstream `tatr` (`time()`/`gmtime()` in `huid.c`).
+pub fn trunc_to_secs(dt: DateTime<Utc>) -> DateTime<Utc> {
+    dt.with_nanosecond(0).expect("nanosecond 0 is always valid")
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Huid {
     timestamp: DateTime<Utc>,
-    counter: u32,
+    /// `None` = no suffix. `Some("")` = trailing dash (upstream accepts this).
+    /// `Some("rexim")` = `-rexim`.
+    suffix: Option<String>,
 }
 
 impl Huid {
     pub fn now() -> Self {
-        Self {
-            timestamp: trunc_to_secs(Utc::now()),
-            counter: 0,
-        }
+        Self::now_with_counter(0)
     }
 
     pub fn now_with_counter(counter: u32) -> Self {
         Self {
             timestamp: trunc_to_secs(Utc::now()),
-            counter,
+            suffix: if counter == 0 {
+                None
+            } else {
+                Some(format!("{counter:02}"))
+            },
         }
     }
 
     pub fn timestamp(&self) -> DateTime<Utc> {
         self.timestamp
     }
-    pub fn counter(&self) -> u32 {
-        self.counter
+    pub fn suffix(&self) -> Option<&str> {
+        self.suffix.as_deref()
     }
-}
-
-fn trunc_to_secs(dt: DateTime<Utc>) -> DateTime<Utc> {
-    dt.with_nanosecond(0).expect("nanosecond 0 is always valid")
 }
 
 impl fmt::Display for Huid {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let ts = self.timestamp.format("%Y%m%d-%H%M%S");
-        if self.counter == 0 {
-            write!(f, "{ts}")
-        } else {
-            write!(f, "{ts}-{:02}", self.counter)
+        match &self.suffix {
+            None => write!(f, "{ts}"),
+            Some(s) => write!(f, "{ts}-{s}"),
         }
     }
 }
@@ -55,27 +59,28 @@ impl FromStr for Huid {
         if s.len() < 15 {
             return Err(format!("huid too short: {s}"));
         }
-        let date_part = s.get(0..15).ok_or_else(|| format!("huid not ASCII: {s}"))?;
+        let (date_part, rest) = s.split_at(15);
         let naive = NaiveDateTime::parse_from_str(date_part, "%Y%m%d-%H%M%S")
             .map_err(|e| format!("invalid huid timestamp '{date_part}': {e}"))?;
         let timestamp = Utc.from_utc_datetime(&naive);
 
-        let counter = match s.get(15..).unwrap_or("") {
-            "" => 0,
-            rest => {
-                let digits = rest
-                    .strip_prefix('-')
-                    .ok_or_else(|| format!("invalid huid suffix: {rest}"))?;
-                digits
-                    .parse::<u32>()
-                    .map_err(|e| format!("invalid counter: {e}"))?
+        let suffix = if rest.is_empty() {
+            None
+        } else {
+            let body = rest
+                .strip_prefix('-')
+                .ok_or_else(|| format!("invalid huid suffix: {rest}"))?;
+            for c in body.chars() {
+                if !(c.is_ascii_alphanumeric() || c == '-') {
+                    return Err(format!("invalid huid suffix character: {c:?}"));
+                }
             }
+            Some(body.to_string())
         };
 
-        Ok(Self { timestamp, counter })
+        Ok(Self { timestamp, suffix })
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;

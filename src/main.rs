@@ -59,7 +59,7 @@ fn main() {
 }
 fn run() -> Result<()> {
     let cli = Cli::parse();
-    let store = Store::new(Paths::new(cli.root));
+    let store = Store::new(Paths::from(cli.root));
 
     match cli.command {
         Command::Ls { query: q } => {

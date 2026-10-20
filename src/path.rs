@@ -7,23 +7,38 @@ pub struct Paths {
 }
 
 impl Paths {
-    pub fn new(root: PathBuf) -> Self {
-        Self { root }
-    }
-
+    
     pub fn tasks_dir(&self) -> PathBuf {
         self.root.join("tasks")
     }
 
+    /// `tasks/<HUID>/`
+    pub fn task_dir(&self, huid: &Huid) -> PathBuf {
+        self.tasks_dir().join(huid.to_string())
+    }
+
+    /// `tasks/<HUID>/TASK.md`
     pub fn task_path(&self, huid: &Huid) -> PathBuf {
-        self.tasks_dir().join(format!("{huid}.md"))
+        self.task_dir(huid).join("TASK.md")
     }
 
     pub fn ensure_tasks_dir(&self) -> std::io::Result<()> {
         std::fs::create_dir_all(self.tasks_dir())
     }
 
-    pub fn task_huid_from_path(&self, path: &Path) -> Option<Huid> {
-        path.file_stem()?.to_str()?.parse().ok()
+    pub fn ensure_task_dir(&self, huid: &Huid) -> std::io::Result<()> {
+        std::fs::create_dir_all(self.task_dir(huid))
+    }
+
+    /// Parse a `tasks/<HUID>` directory name into a HUID.
+    pub fn huid_from_task_dir(&self, path: &Path) -> Option<Huid> {
+        path.file_name()?.to_str()?.parse().ok()
+    }
+}
+
+
+impl From<PathBuf> for Paths {
+    fn from(root: PathBuf) -> Self {
+        Self { root }
     }
 }
