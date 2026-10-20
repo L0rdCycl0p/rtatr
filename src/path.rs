@@ -7,7 +7,6 @@ pub struct Paths {
 }
 
 impl Paths {
-    
     pub fn tasks_dir(&self) -> PathBuf {
         self.root.join("tasks")
     }
@@ -35,7 +34,6 @@ impl Paths {
         path.file_name()?.to_str()?.parse().ok()
     }
 }
-
 
 impl From<PathBuf> for Paths {
     fn from(root: PathBuf) -> Self {

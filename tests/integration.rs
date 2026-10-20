@@ -82,7 +82,6 @@ fn unbalanced_parens_errors() {
     assert!(parse(":a)").is_err());
 }
 
-
 #[test]
 fn store_writes_task_directory() {
     let (_dir, store) = temp_store();
@@ -111,12 +110,17 @@ fn huid_accepts_upstream_suffix() {
     let h: Huid = "20240101-120000-01a".parse().unwrap();
     assert_eq!(h.to_string(), "20240101-120000-01a");
 
-    assert!("20240101-120000".parse::<Huid>().unwrap()
-          < "20240101-120000-01".parse::<Huid>().unwrap());
-    assert!("20240101-120000-01".parse::<Huid>().unwrap()
-          < "20240101-120000-02".parse::<Huid>().unwrap());
-    assert!("20240101-120000-09".parse::<Huid>().unwrap()
-          < "20240101-120000-10".parse::<Huid>().unwrap());
+    assert!(
+        "20240101-120000".parse::<Huid>().unwrap() < "20240101-120000-01".parse::<Huid>().unwrap()
+    );
+    assert!(
+        "20240101-120000-01".parse::<Huid>().unwrap()
+            < "20240101-120000-02".parse::<Huid>().unwrap()
+    );
+    assert!(
+        "20240101-120000-09".parse::<Huid>().unwrap()
+            < "20240101-120000-10".parse::<Huid>().unwrap()
+    );
 }
 
 #[test]
