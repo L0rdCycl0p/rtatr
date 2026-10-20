@@ -1,13 +1,13 @@
 pub mod error;
+pub mod graph;
 pub mod huid;
 pub mod md;
 pub mod path;
 pub mod query;
 pub mod store;
 pub mod task;
-pub mod update;
-pub mod graph;
 pub mod todo;
+pub mod update;
 
 pub use error::{Result, RtatrError};
 pub use huid::{trunc_to_secs, Huid};

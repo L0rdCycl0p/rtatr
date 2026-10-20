@@ -50,10 +50,15 @@ fn scan_file(store: &Store, file: &Path, id_suffix: Option<&str>) -> Result<()> 
         let title = suffix.trim();
         let line_number = i + 1;
 
-        println!("{}:{}: Found a TODO: {}", file.display(), line_number, title);
+        println!(
+            "{}:{}: Found a TODO: {}",
+            file.display(),
+            line_number,
+            title
+        );
         let start = i.saturating_sub(2);
         let end = (i + 2).min(lines.len().saturating_sub(1));
-        for (j, line) in lines.iter().enumerate().take(end+1).skip(start) {
+        for (j, line) in lines.iter().enumerate().take(end + 1).skip(start) {
             if j == i {
                 println!("{prefix}TODO:{suffix}");
             } else {

@@ -49,8 +49,17 @@ pub fn run(store: &Store) -> Result<()> {
         .status();
     match status {
         Ok(s) if s.success() => println!("Generated graph.svg"),
-        Ok(s) => eprintln!("warning: neato exited with {s:?}"),
-        Err(e) => eprintln!("warning: failed to run neato: {e} (graph.dot still written)"),
+        Ok(s) => {
+            eprintln!("warning: neato exited with {s:?}");
+            return Err(RtatrError::Parse(format!("neato failed: {s:?}")));
+        }
+        Err(e) => {
+            eprintln!("warning: failed to run neato: {e}");
+            return Err(RtatrError::Io {
+                path: std::path::PathBuf::from("neato"),
+                source: e,
+            });
+        }
     }
     Ok(())
 }
