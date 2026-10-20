@@ -40,6 +40,14 @@ impl Huid {
     pub fn suffix(&self) -> Option<&str> {
         self.suffix.as_deref()
     }
+    /// Construct with an explicit suffix (upstream `-s`). No collision
+    /// handling — the caller decides what to do if the directory exists.
+    pub fn now_with_suffix(suffix: Option<String>) -> Self {
+        Self {
+            timestamp: trunc_to_secs(Utc::now()),
+            suffix,
+        }
+    }
 }
 
 impl fmt::Display for Huid {

@@ -33,6 +33,19 @@ impl Paths {
     pub fn huid_from_task_dir(&self, path: &Path) -> Option<Huid> {
         path.file_name()?.to_str()?.parse().ok()
     }
+
+    /// If `cwd` is exactly `.../tasks/<HUID>`, return that HUID.
+    /// Mirrors upstream `id_run` (which checks `path_relative(cwd, tasks/) == ".."`).
+    pub fn current_task_huid(&self) -> Option<Huid> {
+        let cwd = std::env::current_dir().ok()?;
+        let name = cwd.file_name()?.to_str()?;
+        let huid: Huid = name.parse().ok()?;
+        let tasks = cwd.parent()?;
+        if tasks.file_name()? != "tasks" {
+            return None;
+        }
+        Some(huid)
+    }
 }
 
 impl From<PathBuf> for Paths {
