@@ -10,7 +10,7 @@ by **Alexey "tsoding" Kutepov**.
 
 ## Install
 
-    cargo install --path .
+    cargo install rtatr
 
 ## Usage
 
