@@ -114,7 +114,7 @@ fn is_bracket(c: char) -> bool {
 }
 
 fn is_ident_char(c: char) -> bool {
-    c.is_alphanumeric() || c == '_' || c == '-' || c == '.'
+    c.is_alphanumeric() || c == '_' || c == '-' || c == '.' || c == '+'
 }
 
 fn tokenize(input: &str) -> Result<Vec<Token>, String> {
@@ -192,6 +192,24 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
     Ok(tokens)
 }
 
+pub fn tokenize_for_debug(input: &str) -> Result<Vec<String>, String> {
+    let tokens = tokenize(input)?;
+    Ok(tokens
+        .into_iter()
+        .filter_map(|t| match t {
+            Token::Tag(s) => Some(format!(":{}", s)),
+            Token::Ident(s) => Some(s),
+            Token::Str(s) => Some(format!("\"{}\"", s)),
+            Token::And => Some("and".into()),
+            Token::Or => Some("or".into()),
+            Token::Not => Some("not".into()),
+            Token::LBracket => Some("[".into()),
+            Token::RBracket => Some("]".into()),
+            Token::Eq => Some("=".into()),
+            Token::Eof => None,
+        })
+        .collect())
+}
 /// Syntactic check matching upstream `is_valid_huid`:
 /// `YYYYMMDD-HHMMSS` optionally followed by `-[A-Za-z0-9-]*`.
 /// Purely lexical — does not validate the calendar date.

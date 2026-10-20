@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 
 use rtatr::error::{Result, RtatrError};
 use rtatr::huid::Huid;
@@ -13,8 +13,8 @@ use rtatr::task::{Task, NEW_TASK_PRIORITY};
 
 #[derive(Parser)]
 #[command(name = "rtatr", version, about = "Rust Task Tracker")]
+#[command(disable_help_subcommand = true)]
 struct Cli {
-    /// Root directory for the task store
     #[arg(long, env = "RTATR_ROOT", default_value = ".")]
     root: PathBuf,
 
@@ -24,10 +24,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Create the tasks/ directory in the current directory
+    /// Create the tasks/ directory
     Init,
 
-    /// List tasks matching a TQL query (open tasks only unless --closed)
+    /// List and update tasks matching a TQL query
     Ls {
         /// Query (e.g. `:work and priority lt 100`); empty = all
         query: Option<String>,
@@ -40,28 +40,37 @@ enum Command {
         /// Sort by HUID instead of priority
         #[arg(long = "id")]
         by_id: bool,
+        /// Apply update operations. Comma- or space-separated list of
+        /// `open`, `close`, `+tag`, `-tag`. Repeatable.
+        #[arg(long)]
+        update: Vec<String>,
+        /// Print parsed query tokens and AST without listing tasks
+        #[arg(long)]
+        debug: bool,
     },
 
     /// Create a new task
     #[command(alias = "add")]
     New {
-        /// Tags for the task (comma and/or whitespace separated)
         #[arg(short, long)]
         tag: Vec<String>,
-        /// Priority of the new task
         #[arg(short, long, default_value_t = NEW_TASK_PRIORITY)]
         priority: i32,
-        /// Optional HUID suffix (e.g. `-s rexim` -> `20240101-120000-rexim`)
         #[arg(short = 's', long = "suffix")]
         id_suffix: Option<String>,
-        /// Task title (positional args are joined with spaces)
         title: Vec<String>,
     },
 
-    /// Find a task by HUID (regardless of open/closed)
+    /// Create tasks from all the TODOs in the given files (interactive)
+    Todo {
+        #[arg(short = 's', long = "suffix")]
+        id_suffix: Option<String>,
+        files: Vec<PathBuf>,
+    },
+
+    /// Find a task by HUID
     Find {
         huid: String,
-        /// Print only the path to TASK.md
         #[arg(long)]
         path_only: bool,
     },
@@ -69,14 +78,19 @@ enum Command {
     /// Print the HUID of the current task folder
     Id,
 
+    /// Grep the repo for references to a task HUID
+    Ref { huid: Option<String> },
+
+    /// Generate a Graphviz graph of task cross-references
+    Graph,
+
     /// Print a summary of tasks grouped by tag
     Summary {
-        /// Summarise closed tasks instead of open ones
         #[arg(short, long)]
         closed: bool,
     },
 
-    /// Update a task's tags
+    /// Update a single task's tags (rtatr extension)
     Update {
         huid: String,
         #[arg(long)]
@@ -85,14 +99,35 @@ enum Command {
         remove_tag: Vec<String>,
     },
 
-    /// Mark a task closed
+    /// Mark a task closed (rtatr extension)
     Done { huid: String },
 
-    /// Delete a task
+    /// Delete a task (rtatr extension)
     Rm { huid: String },
 
-    /// Print a task
+    /// Print a task (rtatr extension)
     Show { huid: String },
+
+    /// DEPRECATED: use `rtatr ls -update +tag <query>` instead
+    Tag {
+        #[arg(short = 't', long = "tag")]
+        tags: Vec<String>,
+        #[arg(short = 'c', long)]
+        closed: bool,
+        query: Vec<String>,
+    },
+
+    /// DEPRECATED: use `rtatr ls -update -tag <query>` instead
+    Untag {
+        #[arg(short = 't', long = "tag")]
+        tags: Vec<String>,
+        #[arg(short = 'c', long)]
+        closed: bool,
+        query: Vec<String>,
+    },
+
+    /// Print help for the program or a specific command
+    Help { command: Option<String> },
 
     /// Print version
     Version,
@@ -125,10 +160,41 @@ fn run() -> Result<()> {
             closed,
             ascending,
             by_id,
+            update,
+            debug,
         } => {
-            let expr = query::parse(q.as_deref().unwrap_or("")).map_err(RtatrError::Query)?;
+            let raw = q.as_deref().unwrap_or("");
+            let q_src = if raw.trim().is_empty() { "any" } else { raw };
+            let q_is_empty = raw.trim().is_empty();
+
+            let parsed_q = query::parse(q_src).map_err(RtatrError::Query)?;
+            let update_src = update.join(" ");
+            let parsed_u = rtatr::parse_update(&update_src).map_err(RtatrError::Query)?;
+
+            if debug {
+                println!("QUERY TOKENS:");
+                for tok in query::tokenize_for_debug(q_src).map_err(RtatrError::Query)? {
+                    println!("    {tok}");
+                }
+                println!();
+                println!("QUERY AST:");
+                println!("    {parsed_q:?}");
+                if !parsed_u.is_empty() {
+                    println!();
+                    println!("UPDATE OPS:");
+                    println!("    {parsed_u:?}");
+                }
+                return Ok(());
+            }
+
+            if !parsed_u.is_empty() && q_is_empty {
+                return Err(RtatrError::Parse(
+                    "-update with empty query is not allowed; use \"any\" query".into(),
+                ));
+            }
+
             let mut tasks: Vec<Task> = store
-                .query(&expr)?
+                .query(&parsed_q)?
                 .into_iter()
                 .filter(|t| (t.status == "CLOSED") == closed)
                 .collect();
@@ -144,17 +210,20 @@ fn run() -> Result<()> {
 
             if tasks.is_empty() {
                 println!("No tasks were found");
-            } else {
-                for task in &tasks {
-                    println!(
-                        "{}  {:<7}  {:>3}  {:<30}  {}",
-                        task.huid,
-                        task.status,
-                        task.priority,
-                        task.tags.join(","),
-                        task.title,
-                    );
+                return Ok(());
+            }
+
+            let mut updated = 0usize;
+            for task in &mut tasks {
+                let was_updated = !parsed_u.is_empty() && rtatr::apply_update(task, &parsed_u);
+                if was_updated {
+                    store.save(task)?;
+                    updated += 1;
                 }
+                print_task_report(task);
+            }
+            if updated > 0 {
+                println!("{updated} tasks were updated");
             }
         }
 
@@ -170,7 +239,6 @@ fn run() -> Result<()> {
                 title.join(" ")
             };
             let tags: Vec<String> = tag.iter().flat_map(|t| split_tags(t)).collect();
-
             let huid = match id_suffix {
                 Some(s) => {
                     for c in s.chars() {
@@ -182,7 +250,6 @@ fn run() -> Result<()> {
                     }
                     let mut h = Huid::now_with_suffix(Some(s.clone()));
                     if store.paths().task_dir(&h).exists() {
-                        // Upstream: sleep 1s and retry once.
                         std::thread::sleep(std::time::Duration::from_secs(1));
                         h = Huid::now_with_suffix(Some(s));
                         if store.paths().task_dir(&h).exists() {
@@ -193,10 +260,13 @@ fn run() -> Result<()> {
                 }
                 None => store.next_huid()?,
             };
-
             let mut task = Task::new(huid.clone(), title, priority, tags);
             store.save(&mut task)?;
             println!("{huid}");
+        }
+
+        Command::Todo { id_suffix, files } => {
+            rtatr::todo::run(&store, &files, id_suffix.as_deref())?;
         }
 
         Command::Find { huid, path_only } => {
@@ -218,12 +288,37 @@ fn run() -> Result<()> {
             }
         },
 
+        Command::Ref { huid } => {
+            let h: Huid = match huid {
+                Some(s) => s.parse().map_err(RtatrError::InvalidHuid)?,
+                None => store.paths().current_task_huid().ok_or_else(|| {
+                    RtatrError::Parse("not inside any task folder; pass the HUID of a task".into())
+                })?,
+            };
+            let root = store.paths().root.clone();
+            let status = std::process::Command::new("grep")
+                .arg("--exclude-dir=.git")
+                .arg("-Irn")
+                .arg(h.to_string())
+                .arg(&root)
+                .status()
+                .map_err(|e| RtatrError::Io {
+                    path: root.clone(),
+                    source: e,
+                })?;
+            // grep exits 1 when no match; that's fine.
+            if !status.success() && status.code() != Some(1) {
+                return Err(RtatrError::Parse(format!("grep failed: {status:?}")));
+            }
+        }
+
+        Command::Graph => rtatr::graph::run(&store)?,
+
         Command::Summary { closed } => {
             let descriptions = read_tag_descriptions(store.paths());
             let mut total = 0usize;
             let mut untagged = 0usize;
             let mut tag_counts: HashMap<String, usize> = HashMap::new();
-
             for t in store.all()? {
                 if (t.status == "CLOSED") != closed {
                     continue;
@@ -236,7 +331,6 @@ fn run() -> Result<()> {
                     *tag_counts.entry(tag.clone()).or_insert(0) += 1;
                 }
             }
-
             let mut sorted: Vec<(String, usize)> = tag_counts.into_iter().collect();
             sorted.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
             let max_width = sorted.iter().map(|(t, _)| t.len()).max().unwrap_or(0);
@@ -309,6 +403,72 @@ fn run() -> Result<()> {
             print!("{}", task.body);
         }
 
+        Command::Tag {
+            tags,
+            closed: _,
+            query,
+        } => {
+            if tags.is_empty() {
+                return Err(RtatrError::Parse("no tags are provided".into()));
+            }
+            if query.is_empty() {
+                return Err(RtatrError::Parse("no query is provided".into()));
+            }
+            let alt = format!(
+                "rtatr ls -update {} {}",
+                tags.iter()
+                    .map(|t| format!("+{t}"))
+                    .collect::<Vec<_>>()
+                    .join(","),
+                query.join(" ")
+            );
+            return Err(RtatrError::Parse(format!(
+                "This command is deprecated! Please use `{alt}` instead!"
+            )));
+        }
+
+        Command::Untag {
+            tags,
+            closed: _,
+            query,
+        } => {
+            if tags.is_empty() {
+                return Err(RtatrError::Parse("no tags are provided".into()));
+            }
+            if query.is_empty() {
+                return Err(RtatrError::Parse("no query is provided".into()));
+            }
+            let alt = format!(
+                "rtatr ls -update {} {}",
+                tags.iter()
+                    .map(|t| format!("-{t}"))
+                    .collect::<Vec<_>>()
+                    .join(","),
+                query.join(" ")
+            );
+            return Err(RtatrError::Parse(format!(
+                "This command is deprecated! Please use `{alt}` instead!"
+            )));
+        }
+
+        Command::Help { command } => {
+            let mut cmd = Cli::command();
+            let res = match command {
+                Some(name) => match cmd.find_subcommand_mut(&name) {
+                    Some(sub) => sub.print_help(),
+                    None => {
+                        return Err(RtatrError::Parse(format!("unknown command: {name}")));
+                    }
+                },
+                None => cmd.print_help(),
+            };
+            res.map_err(|e| RtatrError::Io {
+                path: PathBuf::from("<stdout>"),
+                source: e,
+            })?;
+            println!();
+        }
+
         Command::Version => {
             println!("rtatr {}", env!("CARGO_PKG_VERSION"));
         }
@@ -316,7 +476,6 @@ fn run() -> Result<()> {
     Ok(())
 }
 
-/// Mirror of upstream `print_task_report` (emacs compilation-mode format).
 fn print_task_report(task: &Task) {
     let tags = if task.tags.is_empty() {
         String::new()
