@@ -3,9 +3,9 @@ use std::path::PathBuf;
 use chrono::Timelike as _;
 use rtatr::path::Paths;
 use rtatr::query::parse;
-use rtatr::{Huid, query};
 use rtatr::store::Store;
 use rtatr::task::Task;
+use rtatr::{query, Huid};
 
 fn temp_store() -> (tempfile::TempDir, Store) {
     let dir = tempfile::tempdir().unwrap();

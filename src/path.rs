@@ -7,9 +7,13 @@ pub struct Paths {
 }
 
 impl Paths {
-    pub fn new(root: PathBuf) -> Self { Self { root } }
+    pub fn new(root: PathBuf) -> Self {
+        Self { root }
+    }
 
-    pub fn tasks_dir(&self) -> PathBuf { self.root.join("tasks") }
+    pub fn tasks_dir(&self) -> PathBuf {
+        self.root.join("tasks")
+    }
 
     pub fn task_path(&self, huid: &Huid) -> PathBuf {
         self.tasks_dir().join(format!("{huid}.md"))

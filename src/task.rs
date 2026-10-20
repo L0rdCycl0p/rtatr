@@ -40,7 +40,13 @@ impl Task {
 
         let props = raw_props.into_iter().filter(|(k, _)| k != "tags").collect();
 
-        Self { huid, tags, props, body, path }
+        Self {
+            huid,
+            tags,
+            props,
+            body,
+            path,
+        }
     }
 
     pub fn to_markdown(&self) -> String {
@@ -60,7 +66,11 @@ impl Task {
     }
 
     pub fn primary_tag(&self) -> &str {
-        self.tags.iter().next().map(String::as_str).unwrap_or("task")
+        self.tags
+            .iter()
+            .next()
+            .map(String::as_str)
+            .unwrap_or("task")
     }
 
     pub fn title(&self) -> String {
@@ -99,7 +109,9 @@ mod tests {
         let original = Task {
             huid: "20240101-120000".parse().unwrap(),
             tags: ["work", "urgent"].iter().map(|s| s.to_string()).collect(),
-            props: [("due".to_string(), "2024-12-31".to_string())].into_iter().collect(),
+            props: [("due".to_string(), "2024-12-31".to_string())]
+                .into_iter()
+                .collect(),
             body: "# Fix login\n\nDetails here.\n".to_string(),
             path: PathBuf::from("x.md"),
         };
