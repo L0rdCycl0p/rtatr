@@ -51,8 +51,13 @@ enum Command {
     /// Print a task
     Show { huid: String },
 }
-
-fn main() -> Result<()> {
+fn main() {
+    if let Err(e) = run() {
+        eprintln!("error: {e}");
+        std::process::exit(1);
+    }
+}
+fn run() -> Result<()> {
     let cli = Cli::parse();
     let store = Store::new(Paths::new(cli.root));
 
@@ -84,7 +89,11 @@ fn main() -> Result<()> {
             store.save(&mut task)?;
             println!("{huid}");
         }
-        Command::Update { huid, add_tag, remove_tag } => {
+        Command::Update {
+            huid,
+            add_tag,
+            remove_tag,
+        } => {
             let h: Huid = huid.parse().map_err(RtatrError::InvalidHuid)?;
             let mut task = store.get(&h)?;
             for t in add_tag {
@@ -111,7 +120,11 @@ fn main() -> Result<()> {
             println!("HUID: {}", task.huid);
             println!(
                 "Tags: {}",
-                task.tags.iter().map(|t| format!(":{t}")).collect::<Vec<_>>().join(" ")
+                task.tags
+                    .iter()
+                    .map(|t| format!(":{t}"))
+                    .collect::<Vec<_>>()
+                    .join(" ")
             );
             println!();
             println!("{}", task.body);
