@@ -60,13 +60,24 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
             continue;
         }
         match c {
-            '(' => { tokens.push(Token::LParen); i += 1; }
-            ')' => { tokens.push(Token::RParen); i += 1; }
-            '=' => { tokens.push(Token::Eq); i += 1; }
+            '(' => {
+                tokens.push(Token::LParen);
+                i += 1;
+            }
+            ')' => {
+                tokens.push(Token::RParen);
+                i += 1;
+            }
+            '=' => {
+                tokens.push(Token::Eq);
+                i += 1;
+            }
             ':' => {
                 let start = i + 1;
                 i += 1;
-                while i < chars.len() && is_ident_char(chars[i]) { i += 1; }
+                while i < chars.len() && is_ident_char(chars[i]) {
+                    i += 1;
+                }
                 let tag: String = chars[start..i].iter().collect();
                 if tag.is_empty() {
                     return Err("empty tag after ':'".into());
@@ -76,7 +87,9 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
             '"' => {
                 let start = i + 1;
                 i += 1;
-                while i < chars.len() && chars[i] != '"' { i += 1; }
+                while i < chars.len() && chars[i] != '"' {
+                    i += 1;
+                }
                 if i >= chars.len() {
                     return Err("unterminated string".into());
                 }
@@ -85,7 +98,9 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
             }
             _ if is_ident_char(c) => {
                 let start = i;
-                while i < chars.len() && is_ident_char(chars[i]) { i += 1; }
+                while i < chars.len() && is_ident_char(chars[i]) {
+                    i += 1;
+                }
                 let word: String = chars[start..i].iter().collect();
                 match word.as_str() {
                     "and" => tokens.push(Token::And),
@@ -105,20 +120,30 @@ fn is_ident_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_' || c == '-' || c == '.'
 }
 
-struct Parser { tokens: Vec<Token>, pos: usize }
+struct Parser {
+    tokens: Vec<Token>,
+    pos: usize,
+}
 
 impl Parser {
-    fn peek(&self) -> &Token { &self.tokens[self.pos] }
-    fn bump(&mut self) -> Token {
-        let t = self.tokens[self.pos].clone();
-        self.pos += 1;
-        t
+    fn peek(&self) -> &Token {
+        self.tokens.get(self.pos).unwrap_or(&Token::Eof)
     }
 
+    fn bump(&mut self) -> Token {
+        let t = self.tokens.get(self.pos).cloned().unwrap_or(Token::Eof);
+        if self.pos < self.tokens.len() {
+            self.pos += 1;
+        }
+        t
+    }
     fn parse_or(&mut self) -> Result<Query, String> {
         let mut left = self.parse_and()?;
         while matches!(self.peek(), Token::Or) {
             self.bump();
+            if matches!(self.peek(), Token::Eof) {
+                return Err("unexpected end of query after 'or'".into());
+            }
             let right = self.parse_and()?;
             left = Query::Or(Box::new(left), Box::new(right));
         }
@@ -129,6 +154,9 @@ impl Parser {
         let mut left = self.parse_unary()?;
         while matches!(self.peek(), Token::And) {
             self.bump();
+            if matches!(self.peek(), Token::Eof) {
+                return Err("unexpected end of query after 'and'".into());
+            }
             let right = self.parse_unary()?;
             left = Query::And(Box::new(left), Box::new(right));
         }
@@ -168,7 +196,6 @@ impl Parser {
                     Ok(Query::Text(name))
                 }
             }
-            Token::Eof => Ok(Query::True),
             other => Err(format!("unexpected token: {other:?}")),
         }
     }

@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use chrono::Timelike as _;
 use rtatr::path::Paths;
+use rtatr::query::parse;
 use rtatr::{Huid, query};
 use rtatr::store::Store;
 use rtatr::task::Task;
@@ -66,4 +67,17 @@ fn now_has_no_subsecond_precision() {
     let h = Huid::now();
     assert_eq!(h.timestamp().nanosecond(), 0);
     assert_eq!(h.to_string().parse::<Huid>().unwrap(), h);
+}
+
+#[test]
+fn trailing_operator_errors() {
+    assert!(parse(":a and").is_err());
+    assert!(parse(":a or").is_err());
+    assert!(parse("and :a").is_err());
+}
+
+#[test]
+fn unbalanced_parens_errors() {
+    assert!(parse("(:a").is_err());
+    assert!(parse(":a)").is_err());
 }
