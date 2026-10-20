@@ -1,0 +1,22 @@
+[package]
+name = "rtatr"
+version = "0.1.0"
+edition = "2021"
+description = "Rust Task Tracker - a fast file-based task tracker with TQL queries"
+license = "MIT"
+
+[lib]
+name = "rtatr"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rtatr"
+path = "src/main.rs"
+
+[dependencies]
+chrono = "0.4"
+clap = { version = "4", features = ["derive", "env"] }
+thiserror = "1"
+
+[dev-dependencies]
+tempfile = "3"
