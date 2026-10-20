@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
+use chrono::Timelike as _;
 use rtatr::path::Paths;
-use rtatr::query;
+use rtatr::{Huid, query};
 use rtatr::store::Store;
 use rtatr::task::Task;
 
@@ -58,4 +59,11 @@ fn persists_across_store_instances() {
     }
     let store2 = Store::new(Paths::new(dir.path().to_path_buf()));
     assert_eq!(store2.all().unwrap().len(), 1);
+}
+
+#[test]
+fn now_has_no_subsecond_precision() {
+    let h = Huid::now();
+    assert_eq!(h.timestamp().nanosecond(), 0);
+    assert_eq!(h.to_string().parse::<Huid>().unwrap(), h);
 }

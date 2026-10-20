@@ -1,7 +1,7 @@
 use std::fmt;
 use std::str::FromStr;
 
-use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, NaiveDateTime, TimeZone, Timelike, Utc};
 
 /// Human-Unique ID: `YYYYMMDD-HHMMSS` with optional `-NN` collision suffix.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -12,15 +12,29 @@ pub struct Huid {
 
 impl Huid {
     pub fn now() -> Self {
-        Self { timestamp: Utc::now(), counter: 0 }
+        Self {
+            timestamp: trunc_to_secs(Utc::now()),
+            counter: 0,
+        }
     }
 
     pub fn now_with_counter(counter: u32) -> Self {
-        Self { timestamp: Utc::now(), counter }
+        Self {
+            timestamp: trunc_to_secs(Utc::now()),
+            counter,
+        }
     }
 
-    pub fn timestamp(&self) -> DateTime<Utc> { self.timestamp }
-    pub fn counter(&self) -> u32 { self.counter }
+    pub fn timestamp(&self) -> DateTime<Utc> {
+        self.timestamp
+    }
+    pub fn counter(&self) -> u32 {
+        self.counter
+    }
+}
+
+fn trunc_to_secs(dt: DateTime<Utc>) -> DateTime<Utc> {
+    dt.with_nanosecond(0).expect("nanosecond 0 is always valid")
 }
 
 impl fmt::Display for Huid {
@@ -52,7 +66,9 @@ impl FromStr for Huid {
                 let digits = rest
                     .strip_prefix('-')
                     .ok_or_else(|| format!("invalid huid suffix: {rest}"))?;
-                digits.parse::<u32>().map_err(|e| format!("invalid counter: {e}"))?
+                digits
+                    .parse::<u32>()
+                    .map_err(|e| format!("invalid counter: {e}"))?
             }
         };
 
