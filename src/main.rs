@@ -51,7 +51,7 @@ enum Command {
         /// Priority of the new task
         #[arg(short, long, default_value_t = NEW_TASK_PRIORITY)]
         priority: i32,
-        /// Optional HUID suffix (e.g. `-s rexim` → `20240101-120000-rexim`)
+        /// Optional HUID suffix (e.g. `-s rexim` -> `20240101-120000-rexim`)
         #[arg(short = 's', long = "suffix")]
         id_suffix: Option<String>,
         /// Task title (positional args are joined with spaces)

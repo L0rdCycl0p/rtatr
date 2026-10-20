@@ -7,6 +7,6 @@ pub mod store;
 pub mod task;
 
 pub use error::{Result, RtatrError};
-pub use huid::Huid;
+pub use huid::{trunc_to_secs, Huid};
 pub use query::{CmpOp, IntExpr, Query};
 pub use task::{split_tags, Prop, Task};

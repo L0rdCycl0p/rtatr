@@ -48,9 +48,9 @@ Files live under `./tasks/<huid>.md`:
 
 ## Migration notes from the C version
 
-* `nob.c` → `Cargo.toml` + `cargo`.
-* `malloc`/`free` → ownership; no unsafe required.
-* Error returns → `Result<T, RtatrError>` with `thiserror`.
+* `nob.c` -> `Cargo.toml` + `cargo`.
+* `malloc`/`free` -> ownership; no unsafe required.
+* Error returns -> `Result<T, RtatrError>` with `thiserror`.
 * Hand-rolled TQL parser (previously C) lives in `src/query.rs`.
 
 ## License
