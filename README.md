@@ -20,6 +20,52 @@ by **Alexey "tsoding" Kutepov** .
     rtatr show 20240101-120000
     rtatr rm 20240101-120000
 
+## Shell completions
+
+### Dynamic (recommended)
+
+Add one line to your shell rc:
+
+    # bash (~/.bashrc)
+    source <(COMPLETE=bash rtatr)
+
+    # zsh (~/.zshrc)
+    source <(COMPLETE=zsh rtatr)
+
+    # fish (~/.config/fish/config.fish)
+    COMPLETE=fish rtatr | source
+
+    # elvish
+    eval (COMPLETE=elvish rtatr | slurp)
+
+    # powershell
+    COMPLETE=powershell rtatr | Invoke-Expression
+
+Then `rtatr find <TAB>` completes HUIDs from the store, `rtatr ls -update <TAB>` 
+offers `open` , `close` , `+tag` , `-tag` , `rtatr new -t <TAB>` completes existing
+tags, and `rtatr ls <TAB>` offers TQL primaries ( `:tag` , `any` , `tagged` , 
+`priority` , `not` ).
+
+HUID and tag completion finds the store by walking up from the current
+directory looking for `tasks/` . Export `RTATR_ROOT` if your store lives
+outside the project tree:
+
+    export RTATR_ROOT=/path/to/project
+
+The completer does not see `--root` on the command line being completed, only
+`RTATR_ROOT` and the working directory.
+
+### Static
+
+File-based install for systems that prefer not to eval a completion script
+at shell start:
+
+    rtatr completions bash > ~/.local/share/bash-completion/completions/rtatr
+    rtatr completions zsh  > ~/.zfunc/_rtatr
+    rtatr completions fish > ~/.config/fish/completions/rtatr.fish
+
+Static scripts know every flag but not the store contents.
+
 ## Task file format
 
 Tasks live at `tasks/<HUID>/TASK.md` , matching upstream `tatr` :
@@ -72,7 +118,6 @@ rtatr extensions (not in upstream): `done` , `rm` , `show` ,
 | `word` | rtatr extension: same, single word |
 | `key=value` | rtatr extension: property equality |
 | `key` | rtatr extension: property exists |
-
 
 ## Migration notes from the C version
 

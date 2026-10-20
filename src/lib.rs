@@ -8,6 +8,7 @@ pub mod store;
 pub mod task;
 pub mod todo;
 pub mod update;
+pub mod complete;
 
 pub use error::{Result, RtatrError};
 pub use huid::{trunc_to_secs, Huid};

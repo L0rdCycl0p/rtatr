@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::engine::ArgValueCompleter;
+use clap_complete::Shell;
 
 use rtatr::error::{Result, RtatrError};
 use rtatr::huid::Huid;
@@ -15,7 +17,7 @@ use rtatr::task::{Task, NEW_TASK_PRIORITY};
 #[command(name = "rtatr", version, about = "Rust Task Tracker")]
 #[command(disable_help_subcommand = true)]
 struct Cli {
-    #[arg(long, env = "RTATR_ROOT", default_value = ".")]
+    #[arg(long, env = "RTATR_ROOT", default_value = ".", value_hint = clap::ValueHint::DirPath)]
     root: PathBuf,
 
     #[command(subcommand)]
@@ -30,6 +32,7 @@ enum Command {
     /// List and update tasks matching a TQL query
     Ls {
         /// Query (e.g. `:work and priority lt 100`); empty = all
+        #[arg(add = ArgValueCompleter::new(rtatr::complete::complete_query))]
         query: Option<String>,
         /// List closed tasks
         #[arg(short, long)]
@@ -42,7 +45,7 @@ enum Command {
         by_id: bool,
         /// Apply update operations. Comma- or space-separated list of
         /// `open`, `close`, `+tag`, `-tag`. Repeatable.
-        #[arg(long)]
+        #[arg(long, add = ArgValueCompleter::new(rtatr::complete::complete_update_ops))]
         update: Vec<String>,
         /// Print parsed query tokens and AST without listing tasks
         #[arg(long)]
@@ -52,7 +55,7 @@ enum Command {
     /// Create a new task
     #[command(alias = "add")]
     New {
-        #[arg(short, long)]
+        #[arg(short, long, add = ArgValueCompleter::new(rtatr::complete::complete_tag_list))]
         tag: Vec<String>,
         #[arg(short, long, default_value_t = NEW_TASK_PRIORITY)]
         priority: i32,
@@ -65,11 +68,14 @@ enum Command {
     Todo {
         #[arg(short = 's', long = "suffix")]
         id_suffix: Option<String>,
+        #[arg(value_hint = clap::ValueHint::FilePath,
+              add = ArgValueCompleter::new(rtatr::complete::complete_files))]
         files: Vec<PathBuf>,
     },
 
     /// Find a task by HUID
     Find {
+        #[arg(add = ArgValueCompleter::new(rtatr::complete::complete_huids))]
         huid: String,
         #[arg(long)]
         path_only: bool,
@@ -79,7 +85,10 @@ enum Command {
     Id,
 
     /// Grep the repo for references to a task HUID
-    Ref { huid: Option<String> },
+    Ref {
+        #[arg(add = ArgValueCompleter::new(rtatr::complete::complete_huids))]
+        huid: Option<String>,
+    },
 
     /// Generate a Graphviz graph of task cross-references
     Graph,
@@ -92,21 +101,31 @@ enum Command {
 
     /// Update a single task's tags (rtatr extension)
     Update {
+        #[arg(add = ArgValueCompleter::new(rtatr::complete::complete_huids))]
         huid: String,
-        #[arg(long)]
+        #[arg(long, add = ArgValueCompleter::new(rtatr::complete::complete_tag_list))]
         add_tag: Vec<String>,
-        #[arg(long)]
+        #[arg(long, add = ArgValueCompleter::new(rtatr::complete::complete_tag_list))]
         remove_tag: Vec<String>,
     },
 
     /// Mark a task closed (rtatr extension)
-    Done { huid: String },
+    Done {
+        #[arg(add = ArgValueCompleter::new(rtatr::complete::complete_huids))]
+        huid: String,
+    },
 
     /// Delete a task (rtatr extension)
-    Rm { huid: String },
+    Rm {
+        #[arg(add = ArgValueCompleter::new(rtatr::complete::complete_huids))]
+        huid: String,
+    },
 
     /// Print a task (rtatr extension)
-    Show { huid: String },
+    Show {
+        #[arg(add = ArgValueCompleter::new(rtatr::complete::complete_huids))]
+        huid: String,
+    },
 
     /// DEPRECATED: use `rtatr ls -update +tag <query>` instead
     Tag {
@@ -127,13 +146,22 @@ enum Command {
     },
 
     /// Print help for the program or a specific command
-    Help { command: Option<String> },
-
+    Help {
+        #[arg(add = ArgValueCompleter::new(rtatr::complete::complete_subcommands))]
+        command: Option<String>,
+    },
+    /// Generate a static shell completion script
+    Completions {
+        #[arg(value_enum)]
+        shell: Shell,
+    },
     /// Print version
     Version,
 }
 
 fn main() {
+    clap_complete::CompleteEnv::with_factory(Cli::command).complete();
+
     if let Err(e) = run() {
         eprintln!("error: {e}");
         std::process::exit(1);
@@ -468,7 +496,10 @@ fn run() -> Result<()> {
             })?;
             println!();
         }
-
+        Command::Completions { shell } => {
+            let mut cmd = Cli::command();
+            clap_complete::generate(shell, &mut cmd, "rtatr", &mut std::io::stdout());
+        }
         Command::Version => {
             println!("rtatr {}", env!("CARGO_PKG_VERSION"));
         }
